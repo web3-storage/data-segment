@@ -1,5 +1,7 @@
+import exp from 'constants'
 import type { Link, ToString } from 'multiformats/link'
 
+export { ToString }
 /**
  * Implementers of the `Read` interface are called "readers". Readers
  * allow for reading bytes from an underlying source.
@@ -50,12 +52,6 @@ export interface Aggregate {
   tree: AggregateTree
 }
 
-export interface AggregateState {
-  capacity: number
-  offset: number
-  parts: MerkleTreeNodeSource[]
-}
-
 export interface Vector<T> extends Iterable<T> {
   append(value: T): Vector<T>
 }
@@ -78,13 +74,14 @@ export interface IndexData {
 
 export interface MerkleTree<I extends uint64 | number = uint64 | number> {
   /**
-   * The Depth of the tree. A single-node tree has depth of 1
-   */
-  depth: number
-  /**
    * Amount of leafs in this Merkle tree.
    */
   leafCount: I
+
+  /**
+   * Height of the tree.
+   */
+  height: number
   /**
    * Root node of this Merkle tree.
    */
@@ -113,10 +110,10 @@ export interface PieceTree extends MerkleTree<number> {
   leafs: MerkleTreeNode[]
 }
 
-export interface AggregateTree
-  extends MerkleTree<uint64>,
-    MerkleTreeBuilder<uint64> {
-  collectProof(level: number, index: uint64): ProofData
+export interface AggregateTree<I extends uint64 | number = uint64>
+  extends MerkleTree<I>,
+    MerkleTreeBuilder<I> {
+  collectProof(level: number, index: I): ProofData
 }
 
 export interface PieceInfo {
@@ -124,7 +121,7 @@ export interface PieceInfo {
    * Commitment to the data segment (Merkle node which is the root of the
    * subtree containing all the nodes making up the data segment)
    */
-  root: MerkleTreeNode
+  link: PieceLink
 
   /**
    * Size is the number of padded bytes that is contained in this piece.
@@ -132,24 +129,39 @@ export interface PieceInfo {
   size: PaddedPieceSize
 }
 
-export interface Piece extends PieceInfo {
-  link(): PieceLink
-  toJSON(): {
-    link: { '/': string }
-    size: number
-  }
+export interface PieceInfoView extends PieceInfo {
+  /**
+   * Height of the perfect binary merkle tree representing
+   * this piece.
+   */
+  height: number
 }
 
-export interface ContentPiece extends Piece {
+/**
+ * Represents a piece tree and underlying merkle tree.
+ */
+export interface Piece extends PieceInfoView {
+  tree: PieceTree
+
+  /**
+   * Size of the payload from which this piece was derived.
+   */
   contentSize: number
+
+  /**
+   * Size after 0 padding to next power of 2.
+   */
   paddedSize: number
 
-  toJSON(): {
-    link: { '/': string }
-    contentSize: number
-    paddedSize: number
-    size: number
-  }
+  /**
+   * Returns a JSON representation of this piece.
+   */
+  toJSON(): PieceJSON
+}
+
+export interface PieceJSON {
+  link: { '/': string }
+  height: number
 }
 
 export type PieceLink = Link<MerkleTreeNode, 0xf101, 0x1012>
@@ -240,11 +252,31 @@ export interface TreeData {
    * thus `nodes[0].length === 1, nodes[1].length === 2len(nodes[1]) = 2`, etc...
    */
   nodes: MerkleTreeNode[][]
+
   /**
    * Leafs is the amount of raw leafs being used. I.e. without padding to
    * nearest two-power
    */
-  leafs: number
+  height: number
+}
+
+export interface AggregateTreeData {
+  /**
+   * Height of the (perfect binary) tree.
+   */
+  height: number
+
+  /**
+   * Sparse array that contains tree nodes. Levels
+   * of the tree are counted from the leaf layer (0).
+   */
+  data: SparseArray<MerkleTreeNode>
+}
+
+export interface SparseArray<T> {
+  clear(): this
+  at(index: uint64): T | undefined
+  set(index: uint64, value: T): this
 }
 
 export interface ProofData {

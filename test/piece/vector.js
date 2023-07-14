@@ -35,5 +35,5 @@ export const createNodeFromInt = (n) => {
 
 export const pieces = sizes.map((size, index) => ({
   size: Piece.PaddedSize.from(size),
-  root: createNodeFromInt(index),
+  link: Piece.createLink(createNodeFromInt(index)),
 }))

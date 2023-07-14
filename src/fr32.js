@@ -47,12 +47,12 @@ const FR_RATIO = IN_BITS_FR / OUT_BITS_FR
  */
 export function toZeroPaddedSize(sourceSize) {
   const size = Math.max(sourceSize, MIN_PIECE_SIZE)
-  let highestBit = Math.floor(Math.log2(size))
+  const highestBit = Math.floor(Math.log2(size))
 
-  const bound = Math.ceil(FR_RATIO * (1 << (highestBit + 1)))
+  const bound = Math.ceil(FR_RATIO * 2 ** (highestBit + 1))
   // the size is either the closest pow2 number, or the next pow2 number if we
   // don't have space for padding
-  return size <= bound ? bound : Math.ceil(FR_RATIO * (1 << (highestBit + 2)))
+  return size <= bound ? bound : Math.ceil(FR_RATIO * 2 ** (highestBit + 2))
 }
 
 /**

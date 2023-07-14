@@ -9,7 +9,7 @@ import { indexAreaStart } from './inclusion.js'
 
 const NodeSize = BigInt(Node.Size)
 const EntrySize = Number(Index.EntrySize)
-export const MAX_CAPACITY = 2n ** BigInt(Tree.MAX_LOG2_LEAFS) * NodeSize
+export const MAX_CAPACITY = 2n ** BigInt(Tree.MAX_HEIGHT) * NodeSize
 
 /**
  * Default aggregate size (32GiB).
@@ -148,7 +148,7 @@ class AggregateBuilder {
    *   offset: API.uint64
    * }, RangeError>}
    */
-  estimate({ root, size }) {
+  estimate({ link, size }) {
     if (this.parts.length >= this.limit) {
       return {
         error: new RangeError(
@@ -183,7 +183,7 @@ class AggregateBuilder {
 
     return {
       ok: {
-        parts: [{ node: root, location: { level, index } }],
+        parts: [{ node: link.multihash.digest, location: { level, index } }],
         offset: offset - this.offset,
       },
     }
@@ -197,7 +197,7 @@ class Aggregate {
    * @param {API.uint64} source.offset
    * @param {API.MerkleTreeNodeSource[]} source.parts
    * @param {number} source.limit
-   * @param {API.MerkleTree} source.tree
+   * @param {API.AggregateTree} source.tree
    */
   constructor({ tree, parts, limit, size, offset }) {
     this.tree = tree
@@ -205,6 +205,7 @@ class Aggregate {
     this.limit = limit
     this.size = size
     this.offset = offset
+    this.link = Piece.createLink(this.tree.root)
   }
   /**
    * Size of the index in bytes.
@@ -212,17 +213,16 @@ class Aggregate {
   get indexSize() {
     return this.limit * EntrySize
   }
-  link() {
-    return Piece.createLink(this.tree.root)
+  /**
+   * Height of the perfect binary merkle tree corresponding to this aggregate.
+   */
+  get height() {
+    return this.tree.height
   }
   toJSON() {
     return {
-      link: { '/': this.link().toString() },
-      // Note that currently our aggregate size is always 32GiB and that is
-      // below the `Number.MAX_SAFE_INTEGER` so we can safely convert it to
-      // a number.
-      // ⚠️ We must revisit this to support larger aggregates in the future.
-      size: Number(this.size),
+      link: { '/': this.link.toString() },
+      height: this.height,
     }
   }
 }

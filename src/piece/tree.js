@@ -3,9 +3,13 @@ import { Size as NodeSize } from '../node.js'
 import * as Proof from '../proof.js'
 export { computeNode } from '../proof.js'
 
+// The value is an unsigned, 32-bit integer that is always numerically greater
+// than the highest index in the array. This means our tree can represent a
+// piece up to 128 GiB in size.
+export const MAX_LEAF_COUNT = 2 ** 32 - 1
+
 /**
- * `newBareTree` allocates that memory needed to construct a tree with a
- * specific amount of leafs.
+ * Allocates a tree for a given amount of leafs.
  *
  * The construction rounds the amount of leafs up to the nearest two-power with
  * zeroed nodes to ensure that the tree is perfect and hence all internal node's
@@ -13,25 +17,29 @@ export { computeNode } from '../proof.js'
  *
  * @param {number} leafs
  */
-export function newBareTree(leafs) {
-  const adjustedLeafs = 1 << Math.ceil(Math.log2(leafs))
-  /** @type {API.TreeData} */
-  const tree = {
-    nodes: new Array(Math.ceil(Math.log2(adjustedLeafs)) + 1),
-    leafs: leafs,
+export function allocate(leafs) {
+  const adjustedLeafs = 2 ** Math.ceil(Math.log2(leafs))
+
+  if (adjustedLeafs > MAX_LEAF_COUNT) {
+    throw new RangeError(
+      `too many leafs ${adjustedLeafs} exceeds ${MAX_LEAF_COUNT} limit`
+    )
   }
 
-  for (const level of tree.nodes.keys()) {
-    tree.nodes[level] = new Array(1 << level)
+  const height = Math.ceil(Math.log2(adjustedLeafs))
+  const nodes = new Array(height + 1)
+
+  for (const level of nodes.keys()) {
+    nodes[level] = new Array(1 << level)
   }
 
-  return tree
+  return new PieceTree({ nodes, height })
 }
 
 /**
  * @param {API.TreeData} tree
  */
-export const depth = (tree) => {
+const depth = (tree) => {
   return tree.nodes.length
 }
 
@@ -62,26 +70,26 @@ export const split = (source) => {
 /**
  * @param {API.Fr23Padded} source
  */
-export const build = (source) => buildFromChunks(split(source))
+export const build = (source) => fromChunks(split(source))
 
 /**
  * @param {API.MerkleTreeNode[]} chunks
  */
-export const buildFromChunks = (chunks) => {
+export const fromChunks = (chunks) => {
   if (chunks.length === 0) {
     throw new RangeError('Empty source')
   }
 
   const leafs = chunks //await Promise.all(chunks.map(truncatedHash))
-  return buildFromLeafs(leafs)
+  return fromLeafs(leafs)
 }
 
 /**
  * @param {API.MerkleTreeNode[]} leafs
  * @returns {API.PieceTree}
  */
-export const buildFromLeafs = (leafs) => {
-  const tree = newBareTree(leafs.length)
+export const fromLeafs = (leafs) => {
+  const tree = allocate(leafs.length)
   // Set the padded leaf nodes
   tree.nodes[depth(tree) - 1] = padLeafs(leafs)
   let parentNodes = tree.nodes[depth(tree) - 1]
@@ -116,26 +124,29 @@ export const padLeafs = (leafs) => {
   return [...leafs, ...paddingLeafs]
 }
 
+/**
+ * @implements {API.PieceTree}
+ */
 class PieceTree {
   /**
-   * @param {API.TreeData} model
+   * @param {object} data
+   * @param {API.MerkleTreeNode[][]} data.nodes
+   * @param {number} data.height
    */
-  constructor(model) {
-    this.model = model
+  constructor({ nodes, height }) {
+    this.nodes = nodes
+    this.height = height
   }
 
   get root() {
-    return root(this.model)
-  }
-  get depth() {
-    return depth(this.model)
+    return root(this)
   }
   get leafs() {
-    const { nodes } = this.model
+    const { nodes } = this
     return nodes[nodes.length - 1]
   }
   get leafCount() {
-    return this.model.leafs
+    return 2 ** this.height
   }
   /**
    *
@@ -143,7 +154,7 @@ class PieceTree {
    * @param {number} index
    */
   node(level, index) {
-    const { nodes } = this.model
+    const { nodes } = this
     return nodes[level][index]
   }
 }

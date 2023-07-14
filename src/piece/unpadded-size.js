@@ -1,5 +1,8 @@
 import * as API from '../api.js'
-import { trailingZeros64 } from '../uint64.js'
+import { trailingZeros64, log2Ceil } from '../uint64.js'
+import * as Node from '../node.js'
+
+const NODE_SIZE = BigInt(Node.Size)
 
 /**
  * Validates that given `size` is a valid {@link API.UnpaddedPieceSize} and
@@ -60,3 +63,10 @@ export const validate = (size) => {
  * @returns {API.PaddedPieceSize}
  */
 export const toPaddedSize = (size) => size + size / 127n
+
+/**
+ * Calculates the height of the piece tree from unpadded size.
+ *
+ * @param {API.UnpaddedPieceSize} size
+ */
+export const toHeight = (size) => log2Ceil(toPaddedSize(size) / NODE_SIZE)

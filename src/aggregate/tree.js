@@ -5,58 +5,57 @@ import * as Proof from '../proof.js'
 import { pow2 } from '../uint64.js'
 
 /**
- * We allow up to 2 ** 60 leafs in the tree, with is greater than then
- * Number.MAX_SAFE_INTEGER ((2 ** 53) - 1) which is why we need to use
- * uint64s.
+ * We limit tree height to 60, since we have a perfect binary merkle tree this
+ * will fit up to 2 ** 60 of leafs nodes.
  */
-export const MAX_LOG2_LEAFS = 60
+export const MAX_HEIGHT = 60
 
 /**
- * @param {number} log2Leafs
+ * Creates a new tree with a given tree `height`.
+ *
+ * @param {number} height
  * @returns {API.AggregateTree}
  */
-export const create = (log2Leafs) => {
-  if (log2Leafs > MAX_LOG2_LEAFS) {
-    throw new RangeError(`too many leafs: 2 ** ${log2Leafs}`)
+export const create = (height) => {
+  if (height > MAX_HEIGHT) {
+    throw new RangeError(`too many leafs: 2 ** ${height}`)
   }
 
-  if (log2Leafs < 0) {
+  if (height < 0) {
     throw new RangeError(`cannot have negative log2Leafs`)
   }
 
-  return new AggregateTree(log2Leafs)
+  return new AggregateTree(height)
 }
 
+/**
+ * @implements {API.AggregateTree}
+ */
 class AggregateTree {
   /**
-   * The sparse array contains the data of the tree. Levels of the tree are
-   * counted from the leaf layer (layer 0).
-   * Where the leaf layer lands depends on the `log2Leafs` value.
-   * The root node of a the tree is stored at position [1].
-   *
-   * @param {number} log2Leafs
+   * @param {number} height
    * @param {SparseArray<API.MerkleTreeNode>} data
    */
 
-  constructor(log2Leafs, data = new SparseArray()) {
-    this.log2Leafs = log2Leafs
+  constructor(height, data = new SparseArray()) {
+    /**
+     * The sparse array contains the data of the tree. Levels of the tree are
+     * counted from the leaf layer (layer 0).
+     *
+     * Where the leaf layer lands depends on the `height` of the tree.
+     */
     this.data = data
-  }
-
-  get maxLevel() {
-    return this.log2Leafs
+    this.height = height
   }
 
   get leafCount() {
-    return 2n ** BigInt(this.log2Leafs)
-  }
-
-  get depth() {
-    return this.log2Leafs + 1
+    // Since this is a perfect binary tree, the leaf count is 2 ** height, it
+    // is a bigint as it may exceed Number.MAX_SAFE_INTEGER (2 ** 53 - 1).
+    return 2n ** BigInt(this.height)
   }
 
   get root() {
-    return this.node(this.maxLevel, 0n)
+    return this.node(this.height, 0n)
   }
 
   /**
@@ -67,11 +66,11 @@ class AggregateTree {
    * @returns {API.ProofData}
    */
   collectProof(level, index) {
-    validateLevelIndex(this.log2Leafs, level, index)
+    validateLevelIndex(this.height, level, index)
     const path = []
     let currentLevel = level
     let currentIndex = index
-    while (currentLevel < this.maxLevel) {
+    while (currentLevel < this.height) {
       // idx^1 is the sibling index
       const node = this.node(currentLevel, currentIndex ^ 1n)
       currentIndex = currentIndex / 2n
@@ -99,7 +98,7 @@ class AggregateTree {
    * @param {API.MerkleTreeNode} node
    */
   setNode(level, index, node) {
-    validateLevelIndex(this.log2Leafs, level, index)
+    validateLevelIndex(this.height, level, index)
 
     if (level > 0) {
       let left = getNodeRaw(this, level - 1, 2n * index)
@@ -114,11 +113,11 @@ class AggregateTree {
       }
     }
 
-    this.data.set(idxFor(this.log2Leafs, level, index), node)
+    this.data.set(idxFor(this.height, level, index), node)
 
     let currentIndex = index
     let n = level
-    while (n < this.maxLevel) {
+    while (n < this.height) {
       const nextIndex = currentIndex >> 1n
       // clear the lowest bit of index for left node
       const left = getNodeRaw(this, n, currentIndex & ~1n)
@@ -134,7 +133,7 @@ class AggregateTree {
               right || ZeroComm.fromLevel(n)
             )
 
-      this.data.set(idxFor(this.log2Leafs, n + 1, nextIndex), node)
+      this.data.set(idxFor(this.height, n + 1, nextIndex), node)
       currentIndex = nextIndex
       n++
     }
@@ -161,19 +160,21 @@ const BigIntSparseBlockSize = BigInt(SparseBlockSize)
 
 /**
  * @template T
+ * @implements {API.SparseArray<T>}
  */
 class SparseArray {
   /**
-   * @param {Map<API.uint64, T[]>} subs
+   * @param {Map<API.uint64, T[]>} shards
    */
-  constructor(subs = new Map()) {
+  constructor(shards = new Map()) {
     /**
      * @private
      */
-    this.subs = subs
+    this.shards = shards
   }
   clear() {
-    this.subs.clear()
+    this.shards.clear()
+    return this
   }
   /**
    * @param {API.uint64} index
@@ -181,7 +182,7 @@ class SparseArray {
    */
   at(index) {
     const subIndex = index / BigIntSparseBlockSize
-    const sub = this.subs.get(subIndex)
+    const sub = this.shards.get(subIndex)
     if (!sub) {
       return undefined
     }
@@ -194,13 +195,15 @@ class SparseArray {
    */
   set(index, value) {
     const subIndex = index / BigIntSparseBlockSize
-    let sub = this.subs.get(subIndex)
-    if (!sub) {
-      sub = new Array(SparseBlockSize)
-      this.subs.set(subIndex, sub)
+    let shard = this.shards.get(subIndex)
+    if (!shard) {
+      shard = new Array(SparseBlockSize)
+      this.shards.set(subIndex, shard)
     }
 
-    sub[Number(index % BigIntSparseBlockSize)] = value
+    shard[Number(index % BigIntSparseBlockSize)] = value
+
+    return this
   }
 
   // ignore fon now it will be used by inclusion code
@@ -211,19 +214,19 @@ class SparseArray {
    * @private
    */
   slice(start, end) {
-    const startSub = start / BigIntSparseBlockSize
-    const endSub = (end - 1n) / BigIntSparseBlockSize
-    if (startSub !== endSub) {
+    const startShard = start / BigIntSparseBlockSize
+    const endShard = (end - 1n) / BigIntSparseBlockSize
+    if (startShard !== endShard) {
       throw new Error('requested slice does not align with one sparse block')
     }
 
-    let sub = this.subs.get(startSub)
-    if (!sub) {
-      sub = new Array(SparseBlockSize)
-      this.subs.set(startSub, sub)
+    let shard = this.shards.get(startShard)
+    if (!shard) {
+      shard = new Array(SparseBlockSize)
+      this.shards.set(startShard, shard)
     }
 
-    return sub.slice(
+    return shard.slice(
       Number(start % BigIntSparseBlockSize),
       Number(end % BigIntSparseBlockSize)
     )
@@ -252,7 +255,7 @@ export const clear = (tree) => {
 
 /**
  * @typedef {{
- * log2Leafs: number
+ * height: number
  * data: SparseArray<API.MerkleTreeNode>
  * }} Model
  *
@@ -261,9 +264,9 @@ export const clear = (tree) => {
  * @param {API.uint64} idx
  */
 const getNodeRaw = (tree, level, idx) => {
-  validateLevelIndex(tree.log2Leafs, level, idx)
+  validateLevelIndex(tree.height, level, idx)
 
-  return tree.data.at(idxFor(tree.log2Leafs, level, idx))
+  return tree.data.at(idxFor(tree.height, level, idx))
 }
 
 /**
@@ -290,13 +293,13 @@ const validateLevelIndex = (maxLevel, level, index) => {
 }
 
 /**
- * @param {number} maxLevel
+ * @param {number} height
  * @param {number} level
  * @param {API.uint64} index
  * @returns {API.uint64}
  */
-export const idxFor = (maxLevel, level, index) => {
-  const depth = maxLevel - level
+export const idxFor = (height, level, index) => {
+  const depth = height - level
   // Hybrid Tree stores the MT as smaller trees in chunks dictated by SparseBlockSize
   // For example with SparseBlockLog2Size of 8, each SparseBlock will store a single
   // 8 deep tree. These threes are then stored one after breath-wise.

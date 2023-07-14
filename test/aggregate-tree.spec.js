@@ -11,7 +11,7 @@ import * as Proof from '../src/proof.js'
  */
 export const testAggregateTree = {
   'basic aggregate tree test': async (assert) => {
-    const piece = PieceTree.buildFromLeafs([
+    const piece = PieceTree.fromLeafs([
       Node.of(0x1),
       Node.empty(),
       Node.empty(),
@@ -32,11 +32,11 @@ export const testAggregateTree = {
     assert.deepEqual(aggregate.leafCount, BigInt(piece.leafCount))
     // depth is the same
 
-    assert.deepEqual(aggregate.depth, piece.depth)
+    assert.deepEqual(aggregate.height, piece.height)
   },
 
   'aggregate tree with left padding': async (assert) => {
-    const piece = PieceTree.buildFromLeafs([
+    const piece = PieceTree.fromLeafs([
       Node.empty(),
       Node.empty(),
       Node.empty(),
@@ -162,7 +162,7 @@ export const testAggregateTree = {
 
   'hybrid with 0 leafs': (assert) => {
     const hybrid = AggregateTree.create(0)
-    assert.deepEqual(hybrid.depth, 1)
+    assert.deepEqual(hybrid.height, 0)
     assert.deepEqual(hybrid.root, Node.empty())
 
     assert.throws(() => hybrid.node(61, 0n), /level too high/)
@@ -213,14 +213,14 @@ export const testAggregateTree = {
   },
 
   'can clear tree': (assert) => {
-    const nonEmpty = PieceTree.buildFromLeafs([
+    const nonEmpty = PieceTree.fromLeafs([
       Node.empty(),
       Node.empty(),
       Node.empty(),
       Node.of(0x1),
     ])
 
-    const empty = PieceTree.buildFromLeafs([
+    const empty = PieceTree.fromLeafs([
       Node.empty(),
       Node.empty(),
       Node.empty(),
